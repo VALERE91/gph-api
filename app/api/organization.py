@@ -13,6 +13,13 @@ from app.dependencies.organization import get_organization_by_id_or_name
 class BatchUserIdentifiersRequest(BaseModel):
     identifiers: List[str]  # Can be usernames or emails
 
+class OrganizationCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+
+class BatchOrganizationRequest(BaseModel):
+    organizations: List[OrganizationCreateRequest]
+
 class BatchOperationResult(BaseModel):
     successful: List[str]
     failed: List[dict]
@@ -48,6 +55,61 @@ def create_organization(
     session.commit()
     session.refresh(db_organization)
     return db_organization
+
+@router.post("/batch", status_code=status.HTTP_200_OK, dependencies=[Depends(PermissionChecker(["organization.create", "organization.superadmin"]))])
+def batch_create_organizations(
+    session: DbSessionDep,
+    current_user: Annotated[AuthUser, Depends(get_current_active_user)],
+    request: BatchOrganizationRequest
+) -> BatchOperationResult:
+    """Create multiple organizations in batch"""
+    successful = []
+    failed = []
+    created_organizations = []
+
+    for org_data in request.organizations:
+        try:
+            # Check if organization name already exists
+            existing_org = session.exec(
+                select(Organization).where(Organization.name == org_data.name)
+            ).first()
+
+            if existing_org:
+                failed.append({
+                    "name": org_data.name,
+                    "reason": f"Organization name '{org_data.name}' already exists"
+                })
+                continue
+
+            # Create new organization
+            db_organization = Organization(
+                name=org_data.name,
+                description=org_data.description
+            )
+            session.add(db_organization)
+            created_organizations.append(db_organization)
+            successful.append(org_data.name)
+
+        except Exception as e:
+            failed.append({
+                "name": org_data.name,
+                "reason": f"Unexpected error: {str(e)}"
+            })
+
+    # Commit all successful creations
+    if created_organizations:
+        session.commit()
+        # Refresh all created organizations to get their IDs
+        for org in created_organizations:
+            session.refresh(org)
+
+    return BatchOperationResult(
+        successful=successful,
+        failed=failed,
+        total_processed=len(request.organizations),
+        successful_count=len(successful),
+        failed_count=len(failed)
+    )
 
 @router.get("/", dependencies=[Depends(PermissionChecker(["organization.list", "organization.superadmin"]))])
 def list_organizations(
@@ -348,4 +410,3 @@ def batch_remove_users_from_organization(
         successful_count=len(successful),
         failed_count=len(failed)
     )
-
