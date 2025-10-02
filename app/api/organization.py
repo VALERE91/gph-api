@@ -216,7 +216,7 @@ def list_organization_users(
     users = session.exec(statement).all()
     return users
 
-@router.post("/{organization_identifier}/users/batch", status_code=status.HTTP_200_OK, dependencies=[Depends(PermissionChecker(["organization.update", "organization.superadmin"]))])
+@router.post("/{organization_identifier}/batch/users", status_code=status.HTTP_200_OK, dependencies=[Depends(PermissionChecker(["organization.update", "organization.superadmin"]))])
 def batch_add_users_to_organization(
     session: DbSessionDep,
     current_user: Annotated[AuthUser, Depends(get_current_active_user)],
@@ -283,7 +283,7 @@ def batch_add_users_to_organization(
         failed_count=len(failed)
     )
 
-@router.delete("/{organization_identifier}/users/batch", status_code=status.HTTP_200_OK, dependencies=[Depends(PermissionChecker(["organization.update", "organization.superadmin"]))])
+@router.delete("/{organization_identifier}/batch/users", status_code=status.HTTP_200_OK, dependencies=[Depends(PermissionChecker(["organization.update", "organization.superadmin"]))])
 def batch_remove_users_from_organization(
     session: DbSessionDep,
     current_user: Annotated[AuthUser, Depends(get_current_active_user)],
@@ -348,3 +348,4 @@ def batch_remove_users_from_organization(
         successful_count=len(successful),
         failed_count=len(failed)
     )
+
