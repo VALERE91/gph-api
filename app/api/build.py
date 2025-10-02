@@ -255,10 +255,41 @@ def list_builds(
     limit: int = 100
 ) -> List[BuildResponse]:
     """List builds with optional team or user filtering and pagination"""
+
+    # Get current user's ID
+    user = session.exec(select(User).where(User.username == current_user.username)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Current user not found"
+        )
+
     statement = select(Build)
 
+    # If user doesn't have build.superadmin permission, restrict to their teams
+    if "build.superadmin" not in current_user.permissions:
+        # Get all team IDs where the user is a member
+        user_teams = session.exec(
+            select(TeamMember.team_id).where(TeamMember.user_id == user.id)
+        ).all()
+
+        if not user_teams:
+            # User is not a member of any team, return empty list
+            return []
+
+        statement = statement.where(Build.team_id.in_(user_teams))
+
     if team_id is not None:
+        # Additional team filter - but still respect user's team access
+        if "build.superadmin" not in current_user.permissions:
+            # Check if user has access to this specific team
+            if not check_user_team_membership(session, user.id, team_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="User must be a member of the team to view its builds"
+                )
         statement = statement.where(Build.team_id == team_id)
+
     if user_id is not None:
         statement = statement.where(Build.created_by == user_id)
 

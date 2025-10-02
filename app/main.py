@@ -6,7 +6,7 @@ load_dotenv()
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from .database import create_db_and_tables
-from .api import items, organization, team, user, build, profile
+from .api import items, organization, team, user, build, profile, roles
 from .setup import create_initial_roles_and_permissions
 from .database import engine
 from . import auth
@@ -24,6 +24,7 @@ app.include_router(team.router)
 app.include_router(user.router)
 app.include_router(build.router)
 app.include_router(profile.router)
+app.include_router(roles.router)
 app.include_router(auth.router)
 
 @app.get("/")
