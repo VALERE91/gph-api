@@ -6,26 +6,10 @@ from pydantic import BaseModel
 
 from app.auth import get_current_active_user, AuthUser, PermissionChecker
 from app.database import DbSessionDep
-from app.models.organization import Organization, OrganizationMemberLink
+from app.models.organization import Organization, OrganizationMemberLink, BatchOrganizationRequest, \
+    BatchOperationResult, BatchUserIdentifiersRequest
 from app.models.user import User
 from app.dependencies.organization import get_organization_by_id_or_name
-
-class BatchUserIdentifiersRequest(BaseModel):
-    identifiers: List[str]  # Can be usernames or emails
-
-class OrganizationCreateRequest(BaseModel):
-    name: str
-    description: str | None = None
-
-class BatchOrganizationRequest(BaseModel):
-    organizations: List[OrganizationCreateRequest]
-
-class BatchOperationResult(BaseModel):
-    successful: List[str]
-    failed: List[dict]
-    total_processed: int
-    successful_count: int
-    failed_count: int
 
 router = APIRouter(
     prefix="/organizations",

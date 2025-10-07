@@ -6,24 +6,12 @@ from pydantic import BaseModel
 
 from app.auth import get_current_active_user, AuthUser, PermissionChecker
 from app.database import DbSessionDep
-from app.models.team import Team, TeamMember
+from app.dependencies.team import check_user_team_ownership
+from app.models.team import Team, TeamMember, BatchTeamRequest, BatchOperationResult, AddUserToTeamRequest, \
+    BatchUserIdentifiersRequest
 from app.models.user import User
 from app.models.organization import Organization, OrganizationMemberLink
 from app.dependencies.organization import get_organization_by_id_or_name
-
-class BatchUserIdentifiersRequest(BaseModel):
-    identifiers: List[str]  # Can be usernames or emails
-    is_owner: bool = False  # Whether to add users as owners
-
-class AddUserToTeamRequest(BaseModel):
-    is_owner: bool = False  # Whether to add user as owner
-
-class BatchOperationResult(BaseModel):
-    successful: List[str]
-    failed: List[dict]
-    total_processed: int
-    successful_count: int
-    failed_count: int
 
 router = APIRouter(
     prefix="/teams",
@@ -52,6 +40,61 @@ def create_team(
     session.commit()
     session.refresh(db_team)
     return db_team
+
+@router.post("/batch", status_code=status.HTTP_200_OK, dependencies=[Depends(PermissionChecker(["team.create", "team.superadmin"]))])
+def batch_create_teams(
+    session: DbSessionDep,
+    current_user: Annotated[AuthUser, Depends(get_current_active_user)],
+    request: BatchTeamRequest
+) -> BatchOperationResult:
+    """Create multiple teams in batch"""
+    successful = []
+    failed = []
+    created_teams = []
+
+    for team_data in request.teams:
+        try:
+            # Validate that the organization exists if provided
+            if team_data.organization_id:
+                organization = session.get(Organization, team_data.organization_id)
+                if not organization:
+                    failed.append({
+                        "name": team_data.name,
+                        "reason": f"Organization with ID {team_data.organization_id} not found"
+                    })
+                    continue
+
+            # Create new team
+            db_team = Team(
+                name=team_data.name,
+                description=team_data.description,
+                organization_id=team_data.organization_id,
+                max_builds=team_data.max_builds
+            )
+            session.add(db_team)
+            created_teams.append(db_team)
+            successful.append(team_data.name)
+
+        except Exception as e:
+            failed.append({
+                "name": team_data.name,
+                "reason": f"Unexpected error: {str(e)}"
+            })
+
+    # Commit all successful creations
+    if created_teams:
+        session.commit()
+        # Refresh all created teams to get their IDs
+        for team in created_teams:
+            session.refresh(team)
+
+    return BatchOperationResult(
+        successful=successful,
+        failed=failed,
+        total_processed=len(request.teams),
+        successful_count=len(successful),
+        failed_count=len(failed)
+    )
 
 @router.get("/", dependencies=[Depends(PermissionChecker(["team.list", "team.superadmin"]))])
 def list_teams(
@@ -130,27 +173,6 @@ def delete_team(
     session.delete(team)
     session.commit()
     return None
-
-def check_user_team_membership(session: DbSessionDep, user_id: int, team_id: int) -> bool:
-    """Check if user is a member of the specified team"""
-    membership = session.exec(
-        select(TeamMember).where(
-            TeamMember.user_id == user_id,
-            TeamMember.team_id == team_id
-        )
-    ).first()
-    return membership is not None
-
-def check_user_team_ownership(session: DbSessionDep, user_id: int, team_id: int) -> bool:
-    """Check if user is an owner of the specified team"""
-    membership = session.exec(
-        select(TeamMember).where(
-            TeamMember.user_id == user_id,
-            TeamMember.team_id == team_id,
-            TeamMember.is_owner == True
-        )
-    ).first()
-    return membership is not None
 
 @router.post("/{team_id}/users/{user_id}", status_code=status.HTTP_201_CREATED, dependencies=[Depends(PermissionChecker(["team.update", "team.superadmin"]))])
 def add_user_to_team(

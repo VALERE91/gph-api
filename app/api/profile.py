@@ -6,43 +6,11 @@ from pydantic import BaseModel
 
 from app.auth import get_current_active_user, AuthUser, get_password_hash
 from app.database import DbSessionDep
+from app.models.profile import ProfileResponse, UserProfileResponse, TeamResponse, PermissionResponse, \
+    OrganizationResponse, PasswordChangeRequest
 from app.models.user import User, Role, Permission, RolePermission
 from app.models.organization import Organization, OrganizationMemberLink
 from app.models.team import Team, TeamMember
-
-class PasswordChangeRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-class UserProfileResponse(BaseModel):
-    id: int
-    username: str
-    email: str
-    full_name: str | None = None
-    is_active: bool
-    role: dict | None = None
-
-class OrganizationResponse(BaseModel):
-    id: int
-    name: str
-    description: str | None = None
-
-class TeamResponse(BaseModel):
-    id: int
-    name: str
-    description: str | None = None
-    organization_id: int | None = None
-
-class PermissionResponse(BaseModel):
-    id: int
-    name: str
-    description: str | None = None
-
-class ProfileResponse(BaseModel):
-    user: UserProfileResponse
-    organizations: List[OrganizationResponse]
-    teams: List[TeamResponse]
-    permissions: List[PermissionResponse]
 
 router = APIRouter(
     prefix="/profile",

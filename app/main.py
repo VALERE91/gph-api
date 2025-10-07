@@ -6,7 +6,7 @@ load_dotenv()
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from .database import create_db_and_tables
-from .api import items, organization, team, user, build, profile, roles
+from .api import organization, team, user, build, profile, roles
 from .setup import create_initial_roles_and_permissions
 from .database import engine
 from . import auth
@@ -18,7 +18,6 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
-app.include_router(items.router)
 app.include_router(organization.router)
 app.include_router(team.router)
 app.include_router(user.router)

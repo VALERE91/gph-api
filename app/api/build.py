@@ -12,34 +12,11 @@ from pydantic import BaseModel
 
 from app.auth import get_current_active_user, AuthUser, PermissionChecker
 from app.database import DbSessionDep
-from app.models.build import Build
+from app.dependencies.team import check_user_team_membership
+from app.models.build import Build, BuildCreate, BuildResponse, BuildUpdate
 from app.models.team import Team, TeamMember
 from app.models.user import User
 from app.settings import get_settings
-
-class BuildCreate(BaseModel):
-    name: str
-    version: str
-    team_id: int
-
-class BuildResponse(BaseModel):
-    id: int
-    name: str
-    version: str
-    path: str
-    size: int
-    short_id: str
-    created_at: datetime
-    updated_at: datetime
-    created_by: int
-    team_id: int
-    upload_url: str | None = None
-    short_download_url: str | None = None
-
-class BuildUpdate(BaseModel):
-    name: str | None = None
-    version: str | None = None
-    size: int | None = None
 
 router = APIRouter(
     prefix="/builds",
@@ -87,27 +64,6 @@ def generate_presigned_upload_url(s3_path: str, expiration: int = 3600) -> str:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate upload URL: {str(e)}"
         )
-
-def check_user_team_membership(session: DbSessionDep, user_id: int, team_id: int) -> bool:
-    """Check if user is a member of the specified team"""
-    membership = session.exec(
-        select(TeamMember).where(
-            TeamMember.user_id == user_id,
-            TeamMember.team_id == team_id
-        )
-    ).first()
-    return membership is not None
-
-def check_user_team_ownership(session: DbSessionDep, user_id: int, team_id: int) -> bool:
-    """Check if user is an owner of the specified team"""
-    membership = session.exec(
-        select(TeamMember).where(
-            TeamMember.user_id == user_id,
-            TeamMember.team_id == team_id,
-            TeamMember.is_owner == True
-        )
-    ).first()
-    return membership is not None
 
 def generate_short_id(length: int = 6) -> str:
     """Generate a random short ID using alphanumeric characters"""
@@ -593,62 +549,6 @@ def get_build_by_short_id(
             "expires_in": 3600,
             "build_id": build.id,
             "short_id": build.short_id,
-            "name": build.name,
-            "version": build.version,
-            "size": build.size
-        }
-    except ClientError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate download URL: {str(e)}"
-        )
-
-@router.get("/{build_id}/download", dependencies=[Depends(PermissionChecker(["build.download", "build.superadmin"]))])
-def get_build_download_url(
-    session: DbSessionDep,
-    current_user: Annotated[AuthUser, Depends(get_current_active_user)],
-    build_id: int
-) -> dict:
-    """Get presigned download URL for a build"""
-    build = session.get(Build, build_id)
-    if not build:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Build not found"
-        )
-
-    # Get current user's ID
-    user = session.exec(select(User).where(User.username == current_user.username)).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Current user not found"
-        )
-
-    # Check if user is a member of the team or has superadmin permission
-    if not (check_user_team_membership(session, user.id, build.team_id) or "build.superadmin" in current_user.permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be a member of the team or have superadmin permission to download builds"
-        )
-
-    settings = get_settings()
-    s3_client = get_s3_client()
-
-    try:
-        download_url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': settings.s3_bucket_name,
-                'Key': build.path
-            },
-            ExpiresIn=3600  # 1 hour expiration
-        )
-
-        return {
-            "download_url": download_url,
-            "expires_in": 3600,
-            "build_id": build.id,
             "name": build.name,
             "version": build.version,
             "size": build.size
